@@ -11,8 +11,8 @@ import org.springframework.boot.autoconfigure.domain.EntityScan;
 @EnableScheduling
 @EnableTransactionManagement
 
-@EnableJpaRepositories("com.JPA")
-@EnableRedisRepositories("com.Redis")
+@EnableJpaRepositories("com.repository.JPA")
+@EnableRedisRepositories("com.repository.Redis")
 @EntityScan(basePackages = "com.model")
 
 public class CBSApplication {

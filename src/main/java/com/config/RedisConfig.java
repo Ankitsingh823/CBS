@@ -10,7 +10,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.repository.configuration.EnableRedisRepositories;
 
 @Configuration
-@EnableRedisRepositories(basePackages = "com.example.DEMO.config")
+@EnableRedisRepositories(basePackages = "com.config")
 public class RedisConfig {
 
     @Value("${spring.redis.host}")
