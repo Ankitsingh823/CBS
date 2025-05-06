@@ -10,6 +10,9 @@ import jakarta.persistence.Index;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.concurrent.ThreadLocalRandom;
+
+
 
 import org.springframework.data.redis.core.RedisHash;
 
@@ -26,7 +29,7 @@ import org.springframework.data.redis.core.RedisHash;
 public class ServiceConfiguration {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(nullable = false, unique = true)
     private Long id;
 
     @Column(nullable = false, unique = true)
@@ -53,5 +56,11 @@ public class ServiceConfiguration {
     @Column(nullable = false)
     private Integer version;
 
+    // Static method to generate random 8-digit ID
+    public static Long generate8DigitId() {
+        long min = 10000000L;
+        long max = 99999999L;
+        return ThreadLocalRandom.current().nextLong(min, max + 1);
+    }
 
 }

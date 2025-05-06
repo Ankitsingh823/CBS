@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.fasterxml.jackson.annotation.JsonFormat;
 
 import java.util.List;
 import java.util.Map;
@@ -34,6 +35,18 @@ public class ServiceConfigController {
         );
         return new ResponseEntity<>(config, HttpStatus.CREATED);
     }
+
+
+    @GetMapping("/compare")
+    public ResponseEntity<ServiceConfigCompareDTO> compareServiceConfigVersions(
+            @RequestParam Long configId,
+            @RequestParam(required = false) Integer version1,
+            @RequestParam(required = false) Integer version2) {
+        ServiceConfigCompareDTO comparison = serviceConfigService.compareServiceConfigVersions(configId, version1, version2);
+        return ResponseEntity.ok(comparison);
+    }
+
+
 
     @GetMapping("/id/{id}")
     public ResponseEntity<ServiceConfiguration> getServiceConfigById(@PathVariable long id)  {
@@ -80,15 +93,6 @@ public class ServiceConfigController {
     public ResponseEntity<String> invalidateServiceConfigCache(@PathVariable String name) {
         serviceConfigService.invalidateServiceConfigCache(name);
         return ResponseEntity.ok("Cache invalidate for: " + name);
-    }
-
-    @GetMapping("/compare")
-    public ResponseEntity<ServiceConfigCompareDTO> compareServiceConfigVersions(
-            @RequestParam Long configId,
-            @RequestParam(required = false) Integer version1,
-            @RequestParam(required = false) Integer version2) {
-        ServiceConfigCompareDTO comparison = serviceConfigService.compareServiceConfigVersions(configId, version1, version2);
-        return ResponseEntity.ok(comparison);
     }
 
     @GetMapping("/history/{configId}")
