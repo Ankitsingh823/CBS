@@ -36,7 +36,7 @@ public class ServiceConfigService {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private static final String REDIS_CONFIG_PREFIX = "service_config_";
+    private static final String REDIS_CONFIG_PREFIX = "CONFIG:";
 
     /**
      * Creates a new service configuration
@@ -144,7 +144,7 @@ public class ServiceConfigService {
      * Updates a service configuration value
      */
     @Transactional
-    public ServiceConfiguration updateServiceConfigValue(Long id, String description, String value, String status, String updatedBy) {
+    public ServiceConfiguration updateServiceConfigValue(Long id, String description, String value, String updatedBy) {
         Optional<ServiceConfiguration> configOpt = configRepository.findById(id);
 
         if (configOpt.isPresent()) {
@@ -153,13 +153,13 @@ public class ServiceConfigService {
             int latestVersion = versionRepository.findMaxVersionForUpdate(config.getId());
             int newVersion = (latestVersion == 0) ? 1 : latestVersion + 1;
 
-            // Save old version
+            // Save old version (snapshot)
             ServiceConfigVersion version = new ServiceConfigVersion();
             version.setConfigId(config.getId());
             version.setValue(config.getValue()); // Old value
             version.setVersion(newVersion); // Use the latest version here
             version.setCreatedAt(LocalDateTime.now());
-            version.setStatus(config.getStatus());
+            version.setStatus(config.getStatus()); // Save current status
             version.setUpdatedBy(updatedBy);
             versionRepository.save(version);
 
@@ -172,33 +172,18 @@ public class ServiceConfigService {
                 config.setValue(value);
             }
 
-//            if (status != null) {
-//                config.setStatus(status);
-//            }
-
-            config.setStatus("PENDING");
+            config.setStatus("PENDING"); // Always mark updated configs as PENDING
 
             config.setUpdatedAt(Instant.now().getEpochSecond());
             config.setUpdatedBy(updatedBy);
-            config.setVersion(newVersion); // Update the version
+            config.setVersion(newVersion); // Update version
 
-            ServiceConfiguration updatedConfig = configRepository.save(config);
-
-            // Invalidate cache if status is APPROVED
-            if ("APPROVED".equals(status)) {
-                // Invalidate cache before updating it
-                invalidateServiceConfigCache(config.getName());
-
-                // Now cache the updated value
-                String redisKey = REDIS_CONFIG_PREFIX + config.getName();
-                redisService.setValue(redisKey, config.getValue(), 600);
-            }
-
-            return updatedConfig;
+            return configRepository.save(config);
         } else {
             throw new RuntimeException("Configuration not found with id: " + id);
         }
     }
+
 
     /**
      * Deletes a service configuration

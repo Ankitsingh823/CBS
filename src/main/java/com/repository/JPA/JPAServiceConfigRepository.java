@@ -11,6 +11,7 @@ import java.util.Optional;
 
 @Repository
 public interface JPAServiceConfigRepository extends JpaRepository<ServiceConfiguration, Long> {
+
     Optional<ServiceConfiguration> findByName(String name);
 
    /* @Query("insert")
