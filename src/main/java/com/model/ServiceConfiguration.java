@@ -1,18 +1,14 @@
 package com.model;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
-import jakarta.persistence.Id;
-import jakarta.persistence.Column;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Index;
-import lombok.Data;
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.ToString;
+import lombok.EqualsAndHashCode;
 
 import java.util.concurrent.ThreadLocalRandom;
-
-
 
 import org.springframework.data.redis.core.RedisHash;
 
@@ -24,15 +20,22 @@ import org.springframework.data.redis.core.RedisHash;
                 @Index(name = "idx_service_config_status", columnList = "status"),
                 @Index(name = "idx_service_config_updated_at", columnList = "updated_at")
         })
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
+@AllArgsConstructor
+@ToString(onlyExplicitlyIncluded = true)
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class ServiceConfiguration {
 
     @Id
     @Column(nullable = false, unique = true)
+    @EqualsAndHashCode.Include
+    @ToString.Include
     private Long id;
 
     @Column(nullable = false, unique = true)
+    @ToString.Include
     private String name;
 
     @Column(length = 1000)
@@ -48,9 +51,9 @@ public class ServiceConfiguration {
     private long createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private long updatedAt ;
+    private long updatedAt;
 
-    @Column
+    @Column(name = "updated_by", nullable = false)
     private String updatedBy;
 
     @Column(nullable = false)

@@ -191,7 +191,7 @@ public class ServiceConfigService {
 
                 // Now cache the updated value
                 String redisKey = REDIS_CONFIG_PREFIX + config.getName();
-                redisService.setValue(redisKey, config.getValue(), 600); // 10 minutes TTL
+                redisService.setValue(redisKey, config.getValue(), 600);
             }
 
             return updatedConfig;

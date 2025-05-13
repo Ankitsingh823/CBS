@@ -1,10 +1,18 @@
 package com.dto;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.ToString;
+import lombok.EqualsAndHashCode;
 
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
+@AllArgsConstructor
+@ToString
+@EqualsAndHashCode
 public class ServiceConfigDTO {
 
     private String name;
