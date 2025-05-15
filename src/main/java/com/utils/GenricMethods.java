@@ -2,8 +2,11 @@ package com.utils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.model.EntityRollout;
+import com.model.RolloutConfig;
 import com.repository.JPA.JPAServiceConfigRepository;
 import com.service.RedisService;
+import com.service.ServiceConfigService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -26,6 +29,9 @@ public class GenricMethods {
 
     @Autowired
     private JPAServiceConfigRepository configRepository;
+
+    @Autowired
+    private ServiceConfigService serviceConfigService;
 
     private String getFromRedisOrDb(String configName) {
         String redisKey = REDIS_PREFIX + configName;
@@ -86,6 +92,53 @@ public class GenricMethods {
         } catch (Exception e) {
             throw new RuntimeException("Failed to parse config as JsonNode: " + configName, e);
         }
+    }
+
+    //Rollout based Generic Methods
+    public boolean isRolloutEnabled(String featureName, String entityId) {
+        Object config = serviceConfigService.getServiceConfigValue(featureName);
+
+        if (config instanceof java.util.Map) {
+            try {
+                RolloutConfig rolloutConfig = objectMapper.convertValue(config, RolloutConfig.class);
+                return evaluateRollout(featureName, entityId, rolloutConfig);
+            } catch (Exception e) {
+                throw new RuntimeException("Invalid rollout config format for: " + featureName, e);
+            }
+        }
+
+        return false;
+    }
+
+    private boolean evaluateRollout(String featureName, String entityId, RolloutConfig config) {
+        String id = entityId.toLowerCase();
+
+        // 1. Check disable list
+        if (config.getDisableAny() != null &&
+                config.getDisableAny().stream().map(String::toLowerCase).anyMatch(id::equals)) {
+            return false;
+        }
+
+        // 2. Global rollout
+        if (Boolean.TRUE.equals(config.getEnableAll())) {
+            Integer rollout = config.getEnableAllRollout();
+            return rollout == null || getBucket(featureName + ":" + id) < rollout;
+        }
+
+        // 3. Per-entity rollout
+        if (config.getEntities() != null) {
+            Optional<EntityRollout> match = config.getEntities()
+                    .stream()
+                    .filter(e -> id.equalsIgnoreCase(e.getId()))
+                    .findFirst();
+            return match.map(entity -> getBucket(featureName + ":" + id) < entity.getRollout()).orElse(false);
+        }
+
+        return false;
+    }
+
+    private int getBucket(String key) {
+        return Math.abs(key.hashCode()) % 100;
     }
 }
 

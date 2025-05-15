@@ -5,6 +5,7 @@ import com.dto.ServiceConfigCompareDTO;
 import com.model.ServiceConfiguration;
 import com.service.RedisService;
 import com.service.ServiceConfigService;
+import com.utils.GenricMethods;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -133,5 +134,19 @@ public class ServiceConfigController {
         Map<String, Object> release = serviceConfigService.createRelease(configIds, userEmail);
         return new ResponseEntity<>(release, HttpStatus.CREATED);
     }
+
+    @GetMapping("/rollout-enabled")
+    public ResponseEntity<Boolean> isFeatureRolloutEnabled(
+            @RequestParam String name,
+            @RequestParam String entityId) {
+        try {
+            boolean enabled = serviceConfigService.getServiceConfigValue(name) instanceof Map
+                    && new GenricMethods().isRolloutEnabled(name, entityId);
+            return ResponseEntity.ok(enabled);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(false);
+        }
+    }
+
 }
 

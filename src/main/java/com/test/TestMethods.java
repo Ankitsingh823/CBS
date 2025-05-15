@@ -59,6 +59,15 @@ public class TestMethods {
             System.out.println(JSON_CONFIG + ": SC_Doesn't_Exist");
         }
 
+        final String ROLLOUT_CONFIG = "FEATURE_X_ROLLOUT"; // rollout based config
+        try {
+            boolean rolloutEnabled = genricMethods.isRolloutEnabled(ROLLOUT_CONFIG, "merchant123");
+            System.out.println(ROLLOUT_CONFIG + " for merchant123: " + rolloutEnabled);
+        } catch (Exception e) {
+            System.out.println(ROLLOUT_CONFIG + ": SC_Doesn't_Exist");
+        }
+
+
         System.out.println("===== Test Complete =====");
     }
 }
