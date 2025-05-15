@@ -8,7 +8,9 @@ import lombok.AllArgsConstructor;
 import lombok.ToString;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
 import java.util.concurrent.ThreadLocalRandom;
+import com.fasterxml.jackson.annotation.JsonFormat;
 
 import org.springframework.data.redis.core.RedisHash;
 
@@ -47,17 +49,22 @@ public class ServiceConfiguration {
     @Column(nullable = false)
     private String status;
 
-    @Column(name = "created_at", nullable = false)
-    private long createdAt;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy'T'HH:mm:ss")
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 
-    @Column(name = "updated_at", nullable = false)
-    private long updatedAt;
-
-    @Column(name = "updated_by", nullable = false)
+    @Column(name = "updated_by")
     private String updatedBy;
 
     @Column(nullable = false)
     private Integer version;
+
+    @Column(name = "created_by", nullable = false)
+    private String createdBy;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy'T'HH:mm:ss")
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
 
     // Static method to generate random 8-digit ID
     public static Long generate8DigitId() {

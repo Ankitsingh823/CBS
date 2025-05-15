@@ -3,8 +3,10 @@ package com.service;
 import com.dto.ServiceConfigCompareDTO;
 import com.model.ServiceConfigVersion;
 import com.model.ServiceConfiguration;
+import com.model.ServiceConfigUpdates;
 import com.repository.JPA.JPAServiceConfigRepository;
 import com.repository.JPA.JPAServiceConfigVersionRepository;
+import com.repository.JPA.JPAServiceConfigUpdatesRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +23,9 @@ import java.util.*;
 
 @Service
 public class ServiceConfigService {
+
+    @Autowired
+    private JPAServiceConfigUpdatesRepository stagingRepository;
 
     @Autowired
     private JPAServiceConfigRepository configRepository;
@@ -42,15 +47,16 @@ public class ServiceConfigService {
      * Creates a new service configuration
      */
     @Transactional
-    public ServiceConfiguration createServiceConfig(String name, String description, String value) {
+    public ServiceConfiguration createServiceConfig(String name, String description, String value, String createdBy) {
         ServiceConfiguration config = new ServiceConfiguration();
         config.setId(generateUnique8DigitId()); // Set custom 8-digit ID
         config.setName(name);
         config.setDescription(description);
         config.setValue(value);
         config.setStatus("PENDING");
-        config.setCreatedAt(Instant.now().getEpochSecond());
-        config.setUpdatedAt(Instant.now().getEpochSecond());
+        config.setCreatedBy(createdBy);
+        config.setUpdatedAt(LocalDateTime.now());
+        config.setCreatedAt(LocalDateTime.now());
         //config.setUpdatedBy();
         config.setVersion(0);
         ServiceConfiguration savedConfig = configRepository.save(config);
@@ -61,6 +67,7 @@ public class ServiceConfigService {
         version.setValue(value);
         version.setVersion(0);
         version.setCreatedAt(LocalDateTime.now());
+        version.setUpdatedAt(LocalDateTime.now());
         version.setStatus("PENDING");
         ServiceConfigVersion save = versionRepository.save(version);
 
@@ -146,42 +153,32 @@ public class ServiceConfigService {
     @Transactional
     public ServiceConfiguration updateServiceConfigValue(Long id, String description, String value, String updatedBy) {
         Optional<ServiceConfiguration> configOpt = configRepository.findById(id);
-
-        if (configOpt.isPresent()) {
-            ServiceConfiguration config = configOpt.get();
-
-            int latestVersion = versionRepository.findMaxVersionForUpdate(config.getId());
-            int newVersion = (latestVersion == 0) ? 1 : latestVersion + 1;
-
-            // Save old version (snapshot)
-            ServiceConfigVersion version = new ServiceConfigVersion();
-            version.setConfigId(config.getId());
-            version.setValue(config.getValue()); // Old value
-            version.setVersion(newVersion); // Use the latest version here
-            version.setCreatedAt(LocalDateTime.now());
-            version.setStatus(config.getStatus()); // Save current status
-            version.setUpdatedBy(updatedBy);
-            versionRepository.save(version);
-
-            // Update config
-            if (description != null) {
-                config.setDescription(description);
-            }
-
-            if (value != null) {
-                config.setValue(value);
-            }
-
-            config.setStatus("PENDING"); // Always mark updated configs as PENDING
-
-            config.setUpdatedAt(Instant.now().getEpochSecond());
-            config.setUpdatedBy(updatedBy);
-            config.setVersion(newVersion); // Update version
-
-            return configRepository.save(config);
-        } else {
+        if (!configOpt.isPresent()) {
             throw new RuntimeException("Configuration not found with id: " + id);
         }
+
+        ServiceConfiguration existing = configOpt.get();
+
+        int latestVersion = versionRepository.findMaxVersionForUpdate(id);
+        int newVersion = (latestVersion == 0) ? 1 : latestVersion + 1;
+
+        // Save a new staging row or update existing one
+        ServiceConfigUpdates staging = stagingRepository.findByConfigId(id).orElse(new ServiceConfigUpdates());
+        staging.setConfigId(id);
+        staging.setName(existing.getName());
+        staging.setDescription(description != null ? description : existing.getDescription());
+        staging.setValue(value != null ? value : existing.getValue());
+        staging.setStatus("PENDING");
+        staging.setUpdatedAt(LocalDateTime.now());
+        staging.setUpdatedBy(updatedBy);
+        staging.setVersion(newVersion);
+
+        stagingRepository.save(staging);
+
+        // Invalidate Redis cache
+        invalidateServiceConfigCache(existing.getName());
+
+        return existing;
     }
 
 
@@ -308,6 +305,7 @@ public class ServiceConfigService {
         return history;
     }
 
+
     /**
      * Creates a release for a set of configurations
      */
@@ -317,49 +315,39 @@ public class ServiceConfigService {
 
         for (Long configId : configIds) {
             Optional<ServiceConfiguration> configOpt = configRepository.findById(configId);
-            if (configOpt.isPresent()) {
-                ServiceConfiguration config = configOpt.get();
-                config.setStatus("APPROVED");
-                config.setUpdatedAt(Instant.now().getEpochSecond());
-                config.setUpdatedBy(userEmail);
-                configRepository.save(config);
+            Optional<ServiceConfigUpdates> stagingOpt = stagingRepository.findByConfigId(configId);
 
-                // Ensure version exists or create it
-                ServiceConfigVersion version = versionRepository
-                        .findByConfigIdAndVersion(configId, config.getVersion())
-                        .orElseGet(() -> {
-                            ServiceConfigVersion newVersion = new ServiceConfigVersion();
-                            newVersion.setConfigId(configId);
-                            newVersion.setVersion(config.getVersion());
-                            newVersion.setValue(config.getValue());
-                            newVersion.setCreatedAt(LocalDateTime.now());
-                            newVersion.setStatus("APPROVED");
-                            newVersion.setUpdatedBy(userEmail);
-                            return versionRepository.save(newVersion);
-                        });
+            if (configOpt.isPresent() && stagingOpt.isPresent()) {
+                ServiceConfiguration main = configOpt.get();
+                ServiceConfigUpdates staged = stagingOpt.get();
 
-//                // Update version status
-//                Optional<ServiceConfigVersion> versionOpt = versionRepository.findByConfigIdAndVersion(configId, config.getVersion());
-//                if (versionOpt.isPresent()) {
-//                    ServiceConfigVersion version = versionOpt.get();
-//                    version.setStatus("APPROVED");
-//                    version.setUpdatedBy(userEmail);
-//                    versionRepository.save(version);
-//                }
+                // Update main config
+                main.setDescription(staged.getDescription());
+                main.setValue(staged.getValue());
+                main.setStatus("APPROVED");
+                main.setUpdatedBy(userEmail);
+                main.setUpdatedAt(LocalDateTime.now());
+                main.setVersion(staged.getVersion());
 
-                // Update version status to APPROVED (if already existed)
+                configRepository.save(main);
+
+                // Save version
+                ServiceConfigVersion version = new ServiceConfigVersion();
+                version.setConfigId(main.getId());
+                version.setValue(main.getValue());
+                version.setVersion(main.getVersion());
+                version.setCreatedAt(LocalDateTime.now());
                 version.setStatus("APPROVED");
                 version.setUpdatedBy(userEmail);
                 versionRepository.save(version);
 
-                // Invalidate cache before caching new value
-                invalidateServiceConfigCache(config.getName());
-                // Cache the updated value in Redis after approving the config
-                if ("APPROVED".equals(config.getStatus())) {
-                    String redisKey = REDIS_CONFIG_PREFIX + config.getName();
-                    redisService.setValue(redisKey, config.getValue(), 600); // 10 minutes TTL
-                }
+                // Clean up staging
+                stagingRepository.deleteByConfigId(configId);
 
+                // Invalidate and refresh Redis
+                String redisKey = REDIS_CONFIG_PREFIX + main.getName();
+                redisService.deleteKey(redisKey);
+                redisService.setValue(redisKey, main.getValue(), 600);
             }
         }
 
@@ -368,7 +356,7 @@ public class ServiceConfigService {
         release.put("userEmail", userEmail);
         release.put("releaseId", "r-" + releaseId.substring(0, 8));
         release.put("releaseStatus", "COMPLETED");
-        release.put("dateCreated", Instant.now().getEpochSecond());
+        release.put("dateCreated", LocalDateTime.now());
         release.put("configIds", configIds);
 
         return release;

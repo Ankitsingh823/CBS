@@ -33,7 +33,8 @@ public class ServiceConfigController {
         ServiceConfiguration config = serviceConfigService.createServiceConfig(
                 configDTO.getName(),
                 configDTO.getDescription(),
-                configDTO.getValue()
+                configDTO.getValue(),
+                configDTO.getCreatedBy()
         );
         return new ResponseEntity<>(config, HttpStatus.CREATED);
     }
@@ -82,7 +83,7 @@ public class ServiceConfigController {
         return ResponseEntity.ok(value != null ? value : "Config not approved or doesn't exist");
     }
 
-    @GetMapping
+    @GetMapping("/list")
     public ResponseEntity<Page<ServiceConfiguration>> listServiceConfigs(
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String status,
@@ -133,3 +134,4 @@ public class ServiceConfigController {
         return new ResponseEntity<>(release, HttpStatus.CREATED);
     }
 }
+

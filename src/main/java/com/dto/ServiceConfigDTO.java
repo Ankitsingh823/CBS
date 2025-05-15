@@ -19,4 +19,5 @@ public class ServiceConfigDTO {
     private String description;
     private String value;
     private String updatedBy;
+    private  String createdBy;
 }
