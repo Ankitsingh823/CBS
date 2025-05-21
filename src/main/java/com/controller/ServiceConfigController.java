@@ -2,7 +2,9 @@ package com.controller;
 
 import com.dto.ServiceConfigDTO;
 import com.dto.ServiceConfigCompareDTO;
+import com.model.ServiceConfigUpdates;
 import com.model.ServiceConfiguration;
+import com.repository.JPA.JPAServiceConfigUpdatesRepository;
 import com.service.RedisService;
 import com.service.ServiceConfigService;
 import com.utils.GenricMethods;
@@ -29,6 +31,9 @@ public class ServiceConfigController {
     @Autowired
     private ServiceConfigService serviceConfigService;
 
+    @Autowired
+    private JPAServiceConfigUpdatesRepository stagingRepository;
+
     @PostMapping("/create")
     public ResponseEntity<ServiceConfiguration> createServiceConfig(@RequestBody ServiceConfigDTO configDTO) {
         ServiceConfiguration config = serviceConfigService.createServiceConfig(
@@ -50,7 +55,7 @@ public class ServiceConfigController {
     }
 
     @GetMapping("/id/{id}")
-    public ResponseEntity<ServiceConfiguration> getServiceConfigById(@PathVariable long id)  {
+    public ResponseEntity<ServiceConfiguration> getServiceConfigById(@PathVariable long id) {
         String cacheKey = "CONFIG:ID:" + id;
 
         String cachedJson = redisService.getValue(cacheKey);
@@ -94,17 +99,26 @@ public class ServiceConfigController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ServiceConfiguration> updateServiceConfig(
+    public ResponseEntity<ServiceConfigUpdates> updateServiceConfig(
             @PathVariable Long id,
             @RequestBody ServiceConfigDTO configDTO) {
-        ServiceConfiguration config = serviceConfigService.updateServiceConfigValue(
+
+        serviceConfigService.updateServiceConfigValue(
                 id,
                 configDTO.getDescription(),
                 configDTO.getValue(),
                 configDTO.getUpdatedBy()
         );
-        return ResponseEntity.ok(config);
+
+        //Return the latest staging config
+        Optional<ServiceConfigUpdates> stagingOpt = stagingRepository.findByConfigId(id);
+        if (stagingOpt.isPresent()) {
+            return ResponseEntity.ok(stagingOpt.get());
+        } else {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
+
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteServiceConfig(@PathVariable Long id) {
@@ -141,12 +155,31 @@ public class ServiceConfigController {
             @RequestParam String entityId) {
         try {
             boolean enabled = serviceConfigService.getServiceConfigValue(name) instanceof Map
-                    && new GenricMethods().isRolloutEnabled(name, entityId);
+                    && new GenricMethods(serviceConfigService).isRolloutEnabled(name, entityId);
+
             return ResponseEntity.ok(enabled);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(false);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
     }
 
+
+//    @GetMapping("/rollout-enabled")
+//    public ResponseEntity<Boolean> isFeatureRolloutEnabled(
+//            @RequestParam String name,
+//            @RequestParam String entityId) {
+//        try {
+//            GenricMethods genricMethods = new GenricMethods(serviceConfigService);  // Pass service
+//            boolean enabled = genricMethods.isRolloutEnabled(name, entityId);       // Always call method
+//            return ResponseEntity.ok(enabled);
+//        } catch (Exception e) {
+//            e.printStackTrace(); // Log the issue
+//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(false);
+//        }
+//    }
+
+
 }
+
+
 

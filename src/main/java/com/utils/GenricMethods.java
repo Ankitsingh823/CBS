@@ -13,7 +13,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Component
 public class GenricMethods {
@@ -94,21 +96,43 @@ public class GenricMethods {
         }
     }
 
+
+    public GenricMethods(ServiceConfigService serviceConfigService) {
+        this.serviceConfigService = serviceConfigService;
+    }
+
     //Rollout based Generic Methods
     public boolean isRolloutEnabled(String featureName, String entityId) {
         Object config = serviceConfigService.getServiceConfigValue(featureName);
 
-        if (config instanceof java.util.Map) {
-            try {
-                RolloutConfig rolloutConfig = objectMapper.convertValue(config, RolloutConfig.class);
-                return evaluateRollout(featureName, entityId, rolloutConfig);
-            } catch (Exception e) {
-                throw new RuntimeException("Invalid rollout config format for: " + featureName, e);
-            }
+        System.out.println("CONFIG_NAME_ROLLOUT type: " + (config == null ? "null" : config.getClass().getName()));
+        System.out.println("CONFIG_NAME_ROLLOUT value: " + config);
+
+        if (config == null) {
+            System.err.println("No config found for feature: " + featureName);
+            return false;
         }
 
-        return false;
+        try {
+            RolloutConfig rolloutConfig;
+
+            if (config instanceof String jsonString) {
+                rolloutConfig = objectMapper.readValue(jsonString, RolloutConfig.class);
+            } else {
+                // For any other object (Map, LinkedHashMap, etc), serialize to JSON and deserialize properly
+                String json = objectMapper.writeValueAsString(config);
+                rolloutConfig = objectMapper.readValue(json, RolloutConfig.class);
+            }
+
+            return evaluateRollout(featureName, entityId, rolloutConfig);
+
+        } catch (Exception e) {
+            System.err.println("Invalid rollout config format for: " + featureName + " : " + e.getMessage());
+            return false;
+        }
     }
+
+
 
     private boolean evaluateRollout(String featureName, String entityId, RolloutConfig config) {
         String id = entityId.toLowerCase();
@@ -116,13 +140,16 @@ public class GenricMethods {
         // 1. Check disable list
         if (config.getDisableAny() != null &&
                 config.getDisableAny().stream().map(String::toLowerCase).anyMatch(id::equals)) {
+            System.out.println("Entity is in disableAny list");  //logs
             return false;
         }
 
         // 2. Global rollout
         if (Boolean.TRUE.equals(config.getEnableAll())) {
             Integer rollout = config.getEnableAllRollout();
-            return rollout == null || getBucket(featureName + ":" + id) < rollout;
+            int bucket = getBucket(featureName + ":" + id);
+            System.out.println("Global rollout: " + rollout + " | Bucket: " + bucket); //logs
+            return rollout == null || bucket < rollout;
         }
 
         // 3. Per-entity rollout
@@ -131,15 +158,25 @@ public class GenricMethods {
                     .stream()
                     .filter(e -> id.equalsIgnoreCase(e.getId()))
                     .findFirst();
-            return match.map(entity -> getBucket(featureName + ":" + id) < entity.getRollout()).orElse(false);
+            if (match.isPresent()) {
+                int rollout = match.get().getRollout();
+                int bucket = getBucket(featureName + ":" + id);
+                System.out.println("Entity: " + id + " | Rollout: " + rollout + " | Bucket: " + bucket); //logs
+                return bucket < rollout;
+            } else {
+                System.out.println("Entity not found in config entities");
+            }
         }
 
         return false;
     }
 
+
     private int getBucket(String key) {
-        return Math.abs(key.hashCode()) % 100;
+        int bucket = ThreadLocalRandom.current().nextInt(100);
+        System.out.println("Generated random bucket for key [" + key + "]: " + bucket);
+        return bucket;
     }
-}
+
 
 

@@ -99,6 +99,25 @@ public class ServiceConfigService {
     }
 
     /**
+     * Gets a service configuration value by name for APPROVED as well as PENDING configs
+     */
+
+//    // This can be used for preview/testing environments
+//    public Object getAnyServiceConfigValue(String name) {
+//        Optional<ServiceConfiguration> config = configRepository.findByName(name);
+//        if (config.isPresent()) { // includes all statuses
+//            String value = config.get().getValue();
+//            try {
+//                return objectMapper.readValue(value, Object.class);
+//            } catch (JsonProcessingException e) {
+//                return value;
+//            }
+//        }
+//        return null;
+//    }
+
+
+    /**
      * Gets a service configuration value by name
      */
     public Object getServiceConfigValue(String name) {
@@ -116,7 +135,7 @@ public class ServiceConfigService {
 
         // If not in Redis or error parsing, get from DB
         Optional<ServiceConfiguration> config = configRepository.findByName(name);
-        if (config.isPresent() && "APPROVED".equals(config.get().getStatus())) {
+        if (config.isPresent() && "APPROVED".equals(config.get().getStatus())){
             String value = config.get().getValue();
 
             // Cache in Redis
@@ -151,7 +170,7 @@ public class ServiceConfigService {
      * Updates a service configuration value
      */
     @Transactional
-    public ServiceConfiguration updateServiceConfigValue(Long id, String description, String value, String updatedBy) {
+    public ServiceConfigUpdates updateServiceConfigValue(Long id, String description, String value, String updatedBy) {
         Optional<ServiceConfiguration> configOpt = configRepository.findById(id);
         if (!configOpt.isPresent()) {
             throw new RuntimeException("Configuration not found with id: " + id);
@@ -159,11 +178,14 @@ public class ServiceConfigService {
 
         ServiceConfiguration existing = configOpt.get();
 
+        // Get latest version for this config
         int latestVersion = versionRepository.findMaxVersionForUpdate(id);
         int newVersion = (latestVersion == 0) ? 1 : latestVersion + 1;
 
-        // Save a new staging row or update existing one
-        ServiceConfigUpdates staging = stagingRepository.findByConfigId(id).orElse(new ServiceConfigUpdates());
+        // Either update existing staging config or create a new one
+        ServiceConfigUpdates staging = stagingRepository.findByConfigId(id)
+                .orElse(new ServiceConfigUpdates());
+
         staging.setConfigId(id);
         staging.setName(existing.getName());
         staging.setDescription(description != null ? description : existing.getDescription());
@@ -178,7 +200,8 @@ public class ServiceConfigService {
         // Invalidate Redis cache
         invalidateServiceConfigCache(existing.getName());
 
-        return existing;
+        // Return the updated staging version, not the main config
+        return staging;
     }
 
 
@@ -317,32 +340,42 @@ public class ServiceConfigService {
             Optional<ServiceConfiguration> configOpt = configRepository.findById(configId);
             Optional<ServiceConfigUpdates> stagingOpt = stagingRepository.findByConfigId(configId);
 
-            if (configOpt.isPresent() && stagingOpt.isPresent()) {
+            if (configOpt.isPresent()) {
                 ServiceConfiguration main = configOpt.get();
-                ServiceConfigUpdates staged = stagingOpt.get();
 
-                // Update main config
-                main.setDescription(staged.getDescription());
-                main.setValue(staged.getValue());
+                if (stagingOpt.isPresent()) {
+                    // If staging exists, use its data
+                    ServiceConfigUpdates staged = stagingOpt.get();
+
+                    main.setDescription(staged.getDescription());
+                    main.setValue(staged.getValue());
+                    main.setVersion(staged.getVersion()); // Make sure to update version
+                    main.setUpdatedAt(LocalDateTime.now());
+                    main.setUpdatedBy(staged.getUpdatedBy());
+
+                    // Remove staging
+                    stagingRepository.deleteByConfigId(configId);
+                }
+
+                // Set status to APPROVED
                 main.setStatus("APPROVED");
-                main.setUpdatedBy(userEmail);
                 main.setUpdatedAt(LocalDateTime.now());
-                main.setVersion(staged.getVersion());
+                //main.setUpdatedBy(userEmail);
 
                 configRepository.save(main);
 
-                // Save version
-                ServiceConfigVersion version = new ServiceConfigVersion();
-                version.setConfigId(main.getId());
-                version.setValue(main.getValue());
-                version.setVersion(main.getVersion());
-                version.setCreatedAt(LocalDateTime.now());
-                version.setStatus("APPROVED");
-                version.setUpdatedBy(userEmail);
-                versionRepository.save(version);
-
-                // Clean up staging
-                stagingRepository.deleteByConfigId(configId);
+                // Insert into version table only if this version doesn't exist yet
+                Optional<ServiceConfigVersion> existingVersion = versionRepository.findByConfigIdAndVersion(main.getId(), main.getVersion());
+                if (!existingVersion.isPresent()) {
+                    ServiceConfigVersion version = new ServiceConfigVersion();
+                    version.setConfigId(main.getId());
+                    version.setValue(main.getValue());
+                    version.setVersion(main.getVersion());
+                    version.setCreatedAt(LocalDateTime.now());
+                    version.setStatus("APPROVED");
+                    main.setUpdatedBy(main.getUpdatedBy());
+                    versionRepository.save(version);
+                }
 
                 // Invalidate and refresh Redis
                 String redisKey = REDIS_CONFIG_PREFIX + main.getName();
